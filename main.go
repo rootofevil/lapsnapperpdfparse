@@ -37,7 +37,7 @@ type TimeAttack struct {
 func ReadPdf(path string) (RaceSession, error) {
 	f, r, err := pdf.Open(path)
 	if err != nil {
-		log.Fatal()
+		log.Println()
 	}
 	defer f.Close()
 	// totalPage := r.NumPage()
