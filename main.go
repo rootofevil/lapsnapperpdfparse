@@ -1,11 +1,17 @@
 package pdfParse
 
 import (
+	"bufio"
+	"fmt"
+	"io/ioutil"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/dcu/pdf"
+	"github.com/golang/freetype"
+	"github.com/hqbobo/text2pic"
 )
 
 type RaceSession struct {
@@ -26,13 +32,18 @@ type TimeAttack struct {
 	Laps      int64
 }
 
-// func main() {
-// 	content, err := ReadPdf(os.Args[1]) // Read local pdf file
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	fmt.Printf("%+v", content)
-// }
+func PdfToImage(inputfile, postimage, fontfile, picture string) (err error) {
+	session, err := ReadPdf(inputfile)
+	if err != nil {
+		return
+	}
+
+	// message := sessionToText(session)
+	// log.Print(message)
+	lines := SessionToLines(session)
+	PrepareImage(lines, postimage, fontfile, picture)
+	return
+}
 
 func ReadPdf(path string) (RaceSession, error) {
 	f, r, err := pdf.Open(path)
@@ -40,23 +51,6 @@ func ReadPdf(path string) (RaceSession, error) {
 		log.Println()
 	}
 	defer f.Close()
-	// totalPage := r.NumPage()
-	// fmt.Println("Total pages:", totalPage)
-	// for pageIndex := 1; pageIndex <= totalPage; pageIndex++ {
-	// 	p := r.Page(pageIndex)
-	// 	if p.V.IsNull() {
-	// 		continue
-	// 	}
-
-	// 	rows, _ := p.GetTextByRow()
-	// 	for _, row := range rows {
-
-	// 		println(">>>> row: ", row.Position)
-	// 		for _, word := range row.Content {
-	// 			fmt.Println(word.S)
-	// 		}
-	// 	}
-	// }
 	timeAttack := RaceSession{}
 	p := r.Page(2)
 	rows, _ := p.GetTextByRow()
@@ -83,16 +77,83 @@ func ReadPdf(path string) (RaceSession, error) {
 			}
 			timeData := TimeAttack{Position: pos, Driver: driver, BestTime: best, Dif: dif, TotalTime: total, Laps: laps}
 			timeAttack.TimeAttackResults = append(timeAttack.TimeAttackResults, timeData)
-			// fmt.Printf("%#v %#v %#v %#v %#v %#v\n", pos, driver, best, dif, total, laps)
 		}
 	}
-	// for _, row := range rows {
-	// 	fmt.Println(">>>> row:", row.Position)
-	// 	for _, word := range row.Content {
-	// 		fmt.Println(word.S)
-	// 	}
-	// }
 	return timeAttack, nil
+}
+
+func SessionToText(session RaceSession) string {
+	text := fmt.Sprintf("%v\nStarted: %v\nEnded: %v\n\nPosition\tCar\t\tBest time\tDif\tTotal time\tLaps\n", session.Type, session.Started, session.Ended)
+	for _, r := range session.TimeAttackResults {
+		line := fmt.Sprintf("%v\t\t%v\t%v\t%v\t%v\t%v\n", r.Position, r.Driver, r.BestTime, r.Dif, r.TotalTime, r.Laps)
+		text += line
+	}
+	return text
+}
+
+func SessionToLines(session RaceSession) []string {
+	var lines []string
+	lines = append(lines, fmt.Sprintf("%v", session.Type))
+	lines = append(lines, fmt.Sprintf("Started: %v", session.Started))
+	lines = append(lines, fmt.Sprintf("Ended:  %v", session.Ended))
+	lines = append(lines, " ")
+	lines = append(lines, "Pos. Car             Best time     Dif         Total time   Laps")
+	for _, r := range session.TimeAttackResults {
+		line := fmt.Sprintf("%v.     %v   %v   %v   %v   %v", r.Position, r.Driver, r.BestTime, r.Dif, r.TotalTime, r.Laps)
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func PrepareImage(text []string, out string, fontpath string, imagepath string) {
+	// Read the font data.
+	fontBytes, err := ioutil.ReadFile(fontpath)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	//produce the fonttype
+	f, err := freetype.ParseFont(fontBytes)
+
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	pic := text2pic.NewTextPicture(text2pic.Configure{Width: 720, BgColor: text2pic.ColorBlack})
+	pic.AddTextLine(" ", 8, f, text2pic.ColorBlack, text2pic.Padding{})
+	for _, l := range text {
+		pic.AddTextLine(l, 6, f, text2pic.ColorWhite, text2pic.Padding{
+			Left:      40,
+			Right:     20,
+			Bottom:    0,
+			Top:       0,
+			LineSpace: 0,
+		})
+	}
+	pic.AddTextLine(" ", 6, f, text2pic.ColorBlack, text2pic.Padding{})
+	file, err := os.Open(imagepath)
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer file.Close()
+
+	pic.AddPictureLine(file, text2pic.Padding{Bottom: 40})
+
+	outFile, err := os.Create(out)
+	if err != nil {
+		return
+	}
+	defer outFile.Close()
+	b := bufio.NewWriter(outFile)
+	//produce the output
+	err = pic.Draw(b, text2pic.TypeJpeg)
+	if err != nil {
+		log.Print(err.Error())
+	}
+	e := b.Flush()
+	if e != nil {
+		fmt.Println(e)
+	}
 }
 
 func editString(s string) (res string) {
