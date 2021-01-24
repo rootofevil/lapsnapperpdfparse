@@ -21,6 +21,9 @@ type RaceSession struct {
 	Started           string
 	Ended             string
 	TimeAttackResults []TimeAttack
+	lines             []string
+	text              string
+	Parameters        Parameters
 }
 
 type TimeAttack struct {
@@ -32,40 +35,64 @@ type TimeAttack struct {
 	Laps      int64
 }
 
-func PdfToImage(inputfile, postimage, fontfile, picture string) (err error) {
-	session, err := ReadPdf(inputfile)
+type Parameters struct {
+	InputfilePath   string
+	OutputimagePath string
+	FontfilePath    string
+	FooterImagePath string
+}
+
+func NewRaceSession(param Parameters) (*RaceSession, error) {
+	if param.InputfilePath == "" {
+		return nil, fmt.Errorf("Parameter %v is mandatory", "InputfilePath")
+	}
+	if param.FontfilePath == "" {
+		return nil, fmt.Errorf("Parameter %v is mandatory", "FontfilePath")
+	}
+	if param.OutputimagePath == "" {
+		return nil, fmt.Errorf("Parameter %v is mandatory", "OutputimagePath")
+	}
+	RaceSession := RaceSession{Parameters: param}
+	return &RaceSession, nil
+}
+
+func (rs RaceSession) PdfToImage() (err error) {
+	err = rs.ReadPdf()
 	if err != nil {
 		return
 	}
 
-	// message := sessionToText(session)
-	// log.Print(message)
-	lines := SessionToLines(session)
-	PrepareImage(lines, postimage, fontfile, picture)
-	return
+	err = rs.PrepareImage()
+	if err != nil {
+		return
+	}
+	return nil
 }
 
-func ReadPdf(path string) (RaceSession, error) {
-	f, r, err := pdf.Open(path)
+func (rs *RaceSession) ReadPdf() error {
+	if len(rs.TimeAttackResults) != 0 {
+		return fmt.Errorf("Session exist")
+	}
+	f, r, err := pdf.Open(rs.Parameters.InputfilePath)
 	if err != nil {
-		log.Println()
+		return err
 	}
 	defer f.Close()
-	timeAttack := RaceSession{}
+	// rs := RaceSession{}
 	p := r.Page(2)
 	rows, _ := p.GetTextByRow()
 	if len(rows) >= 4 {
-		timeAttack.Type = rows[1].Content[0].S
-		timeAttack.Name = editString(rows[2].Content[0].S)    //strings.Trim(strings.Split(rows[2].Content[0].S, ":")[1], " ")
-		timeAttack.Started = editString(rows[2].Content[1].S) //strings.Trim(strings.Split(rows[2].Content[1].S, ":")[1], " ")
-		timeAttack.LapCount = editString(rows[3].Content[0].S)
-		timeAttack.Ended = editString(rows[3].Content[1].S)
+		rs.Type = rows[1].Content[0].S
+		rs.Name = editString(rows[2].Content[0].S)    //strings.Trim(strings.Split(rows[2].Content[0].S, ":")[1], " ")
+		rs.Started = editString(rows[2].Content[1].S) //strings.Trim(strings.Split(rows[2].Content[1].S, ":")[1], " ")
+		rs.LapCount = editString(rows[3].Content[0].S)
+		rs.Ended = editString(rows[3].Content[1].S)
 	}
 	for i := 6; i < len(rows); i++ {
 		if r := rows[i]; len(r.Content) >= 6 {
 			pos, err := strconv.ParseInt(strings.Trim(r.Content[0].S, "."), 10, 32)
 			if err != nil {
-				log.Println(err)
+				return err
 			}
 			driver := strings.Trim(r.Content[1].S, " ")
 			best := strings.Trim(r.Content[2].S, " ")
@@ -73,52 +100,53 @@ func ReadPdf(path string) (RaceSession, error) {
 			total := strings.Trim(r.Content[4].S, " ")
 			laps, err := strconv.ParseInt(strings.Trim(r.Content[5].S, "."), 10, 32)
 			if err != nil {
-				log.Println(err)
+				return err
 			}
 			timeData := TimeAttack{Position: pos, Driver: driver, BestTime: best, Dif: dif, TotalTime: total, Laps: laps}
-			timeAttack.TimeAttackResults = append(timeAttack.TimeAttackResults, timeData)
+			rs.TimeAttackResults = append(rs.TimeAttackResults, timeData)
 		}
 	}
-	return timeAttack, nil
+	return nil
 }
 
-func SessionToText(session RaceSession) string {
+func (rs *RaceSession) SessionToText(session RaceSession) *RaceSession {
 	text := fmt.Sprintf("%v\nStarted: %v\nEnded: %v\n\nPosition\tCar\t\tBest time\tDif\tTotal time\tLaps\n", session.Type, session.Started, session.Ended)
 	for _, r := range session.TimeAttackResults {
 		line := fmt.Sprintf("%v\t\t%v\t%v\t%v\t%v\t%v\n", r.Position, r.Driver, r.BestTime, r.Dif, r.TotalTime, r.Laps)
 		text += line
 	}
-	return text
+	rs.text = text
+	return rs
 }
 
-func SessionToLines(session RaceSession) []string {
+func (rs *RaceSession) SessionToLines() *RaceSession {
 	var lines []string
-	lines = append(lines, fmt.Sprintf("%v", session.Type))
-	lines = append(lines, fmt.Sprintf("Started: %v", session.Started))
-	lines = append(lines, fmt.Sprintf("Ended:  %v", session.Ended))
+	lines = append(lines, fmt.Sprintf("%v", rs.Type))
+	lines = append(lines, fmt.Sprintf("Started: %v", rs.Started))
+	lines = append(lines, fmt.Sprintf("Ended:  %v", rs.Ended))
 	lines = append(lines, " ")
 	lines = append(lines, "Pos. Car             Best time     Dif         Total time   Laps")
-	for _, r := range session.TimeAttackResults {
+	for _, r := range rs.TimeAttackResults {
 		line := fmt.Sprintf("%v.     %v   %v   %v   %v   %v", r.Position, r.Driver, r.BestTime, r.Dif, r.TotalTime, r.Laps)
 		lines = append(lines, line)
 	}
-	return lines
+	rs.lines = lines
+	return rs
 }
 
-func PrepareImage(text []string, out string, fontpath string, imagepath string) {
+func (rs *RaceSession) PrepareImage() (err error) {
 	// Read the font data.
-	fontBytes, err := ioutil.ReadFile(fontpath)
+	fontBytes, err := ioutil.ReadFile(rs.Parameters.FontfilePath)
 	if err != nil {
-		log.Println(err)
 		return
 	}
 	//produce the fonttype
 	f, err := freetype.ParseFont(fontBytes)
 
 	if err != nil {
-		log.Println(err)
 		return
 	}
+	text := rs.SessionToLines().lines
 	pic := text2pic.NewTextPicture(text2pic.Configure{Width: 720, BgColor: text2pic.ColorBlack})
 	pic.AddTextLine(" ", 8, f, text2pic.ColorBlack, text2pic.Padding{})
 	for _, l := range text {
@@ -131,15 +159,17 @@ func PrepareImage(text []string, out string, fontpath string, imagepath string) 
 		})
 	}
 	pic.AddTextLine(" ", 6, f, text2pic.ColorBlack, text2pic.Padding{})
-	file, err := os.Open(imagepath)
-	if err != nil {
-		fmt.Println(err)
+
+	if rs.Parameters.FooterImagePath != "" {
+		file, err := os.Open(rs.Parameters.FooterImagePath)
+		if err != nil {
+			log.Println(err)
+		}
+		defer file.Close()
+		pic.AddPictureLine(file, text2pic.Padding{Bottom: 40})
 	}
-	defer file.Close()
 
-	pic.AddPictureLine(file, text2pic.Padding{Bottom: 40})
-
-	outFile, err := os.Create(out)
+	outFile, err := os.Create(rs.Parameters.OutputimagePath)
 	if err != nil {
 		return
 	}
@@ -154,6 +184,7 @@ func PrepareImage(text []string, out string, fontpath string, imagepath string) 
 	if e != nil {
 		fmt.Println(e)
 	}
+	return
 }
 
 func editString(s string) (res string) {
