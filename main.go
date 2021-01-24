@@ -40,6 +40,7 @@ type Parameters struct {
 	OutputimagePath string
 	FontfilePath    string
 	FooterImagePath string
+	FontSize        float64
 }
 
 func NewRaceSession(param Parameters) (*RaceSession, error) {
@@ -109,9 +110,9 @@ func (rs *RaceSession) ReadPdf() error {
 	return nil
 }
 
-func (rs *RaceSession) SessionToText(session RaceSession) *RaceSession {
-	text := fmt.Sprintf("%v\nStarted: %v\nEnded: %v\n\nPosition\tCar\t\tBest time\tDif\tTotal time\tLaps\n", session.Type, session.Started, session.Ended)
-	for _, r := range session.TimeAttackResults {
+func (rs *RaceSession) SessionToText() *RaceSession {
+	text := fmt.Sprintf("%v\nStarted: %v\nEnded: %v\n\nPosition\tCar\t\tBest time\tDif\tTotal time\tLaps\n", rs.Type, rs.Started, rs.Ended)
+	for _, r := range rs.TimeAttackResults {
 		line := fmt.Sprintf("%v\t\t%v\t%v\t%v\t%v\t%v\n", r.Position, r.Driver, r.BestTime, r.Dif, r.TotalTime, r.Laps)
 		text += line
 	}
@@ -121,13 +122,31 @@ func (rs *RaceSession) SessionToText(session RaceSession) *RaceSession {
 
 func (rs *RaceSession) SessionToLines() *RaceSession {
 	var lines []string
+	columnsSize := []int{6, 12, 12, 8, 12, 4}
+	pattern := "%v%v%v%v%v%v"
 	lines = append(lines, fmt.Sprintf("%v", rs.Type))
 	lines = append(lines, fmt.Sprintf("Started: %v", rs.Started))
 	lines = append(lines, fmt.Sprintf("Ended:  %v", rs.Ended))
 	lines = append(lines, " ")
-	lines = append(lines, "Pos. Car             Best time     Dif         Total time   Laps")
+
+	headoftable := fmt.Sprintf(pattern,
+		incLen("Pos.", columnsSize[0]),
+		incLen("Car", columnsSize[1]),
+		incLen("Best time", columnsSize[2]),
+		incLen("Dif", columnsSize[3]),
+		incLen("Total time", columnsSize[4]),
+		incLen("Laps", columnsSize[5]),
+	)
+	lines = append(lines, headoftable)
 	for _, r := range rs.TimeAttackResults {
-		line := fmt.Sprintf("%v.     %v   %v   %v   %v   %v", r.Position, r.Driver, r.BestTime, r.Dif, r.TotalTime, r.Laps)
+
+		line := fmt.Sprintf(pattern,
+			incLen(fmt.Sprint(r.Position), columnsSize[0]),
+			incLen(r.Driver, columnsSize[1]),
+			incLen(r.BestTime, columnsSize[2]),
+			incLen(r.Dif, columnsSize[3]),
+			incLen(r.TotalTime, columnsSize[4]),
+			incLen(fmt.Sprint(r.Laps), columnsSize[5]))
 		lines = append(lines, line)
 	}
 	rs.lines = lines
@@ -148,9 +167,14 @@ func (rs *RaceSession) PrepareImage() (err error) {
 	}
 	text := rs.SessionToLines().lines
 	pic := text2pic.NewTextPicture(text2pic.Configure{Width: 720, BgColor: text2pic.ColorBlack})
-	pic.AddTextLine(" ", 8, f, text2pic.ColorBlack, text2pic.Padding{})
+	var fontsize float64 = 8
+	if rs.Parameters.FontSize != 0 {
+		fontsize = rs.Parameters.FontSize
+	}
+
+	pic.AddTextLine(" ", fontsize, f, text2pic.ColorBlack, text2pic.Padding{})
 	for _, l := range text {
-		pic.AddTextLine(l, 6, f, text2pic.ColorWhite, text2pic.Padding{
+		pic.AddTextLine(l, fontsize, f, text2pic.ColorWhite, text2pic.Padding{
 			Left:      40,
 			Right:     20,
 			Bottom:    0,
@@ -158,7 +182,7 @@ func (rs *RaceSession) PrepareImage() (err error) {
 			LineSpace: 0,
 		})
 	}
-	pic.AddTextLine(" ", 6, f, text2pic.ColorBlack, text2pic.Padding{})
+	pic.AddTextLine(" ", fontsize, f, text2pic.ColorBlack, text2pic.Padding{})
 
 	if rs.Parameters.FooterImagePath != "" {
 		file, err := os.Open(rs.Parameters.FooterImagePath)
@@ -197,4 +221,15 @@ func editString(s string) (res string) {
 		res += strings.Trim(raw[i], " ")
 	}
 	return
+}
+
+func incLen(s string, l int) string {
+	if len(s) > l {
+		return s
+	}
+
+	for len(s) < l {
+		s += " "
+	}
+	return s
 }
