@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -41,6 +42,14 @@ type Parameters struct {
 	FontfilePath    string
 	FooterImagePath string
 	FontSize        float64
+	FormatPattern   string
+	ColumnsSizes    []int
+}
+
+var defaults Parameters = Parameters{
+	FontSize:      6,
+	FormatPattern: "%v%v%v%v%v%v",
+	ColumnsSizes:  []int{6, 12, 12, 8, 12, 4},
 }
 
 func NewRaceSession(param Parameters) (*RaceSession, error) {
@@ -57,13 +66,31 @@ func NewRaceSession(param Parameters) (*RaceSession, error) {
 	return &RaceSession, nil
 }
 
+func (rs *RaceSession) setDefaultParams() {
+	def := reflect.ValueOf(defaults)
+	v := reflect.ValueOf(&rs.Parameters)
+	elem := v.Elem()
+
+	for i := 0; i < elem.NumField(); i++ {
+		name := elem.Type().Field(i).Name
+		field := elem.Field(i)
+
+		if field.IsZero() && field.IsValid() {
+			if toSet := def.FieldByName(name); toSet.IsValid() && field.CanSet() {
+				field.Set(toSet)
+			}
+
+		}
+	}
+}
+
 func (rs RaceSession) PdfToImage() (err error) {
 	err = rs.ReadPdf()
 	if err != nil {
 		return
 	}
 
-	err = rs.PrepareImage()
+	err = rs.GenerateImage()
 	if err != nil {
 		return
 	}
@@ -122,8 +149,8 @@ func (rs *RaceSession) SessionToText() *RaceSession {
 
 func (rs *RaceSession) SessionToLines() *RaceSession {
 	var lines []string
-	columnsSize := []int{6, 12, 12, 8, 12, 4}
-	pattern := "%v%v%v%v%v%v"
+	columnsSize := rs.Parameters.ColumnsSizes
+	pattern := rs.Parameters.FormatPattern
 	lines = append(lines, fmt.Sprintf("%v", rs.Type))
 	lines = append(lines, fmt.Sprintf("Started: %v", rs.Started))
 	lines = append(lines, fmt.Sprintf("Ended:  %v", rs.Ended))
@@ -153,7 +180,7 @@ func (rs *RaceSession) SessionToLines() *RaceSession {
 	return rs
 }
 
-func (rs *RaceSession) PrepareImage() (err error) {
+func (rs *RaceSession) GenerateImage() (err error) {
 	// Read the font data.
 	fontBytes, err := ioutil.ReadFile(rs.Parameters.FontfilePath)
 	if err != nil {
