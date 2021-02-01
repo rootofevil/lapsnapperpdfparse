@@ -1,4 +1,4 @@
-module pdfParse
+module github.com/rootofevil/lapsnapperpdfparse
 
 go 1.13
 
