@@ -22,9 +22,9 @@ type RaceSession struct {
 	Started           string
 	Ended             string
 	TimeAttackResults []TimeAttack
-	lines             []string
-	text              string
-	Parameters        Parameters
+	// lines             []string
+	// text              string
+	Parameters Parameters
 }
 
 type TimeAttack struct {
@@ -85,6 +85,7 @@ func (rs *RaceSession) setDefaultParams() {
 }
 
 func (rs RaceSession) PdfToImage() (err error) {
+	rs.setDefaultParams()
 	err = rs.ReadPdf()
 	if err != nil {
 		return
@@ -137,18 +138,24 @@ func (rs *RaceSession) ReadPdf() error {
 	return nil
 }
 
-func (rs *RaceSession) SessionToText() *RaceSession {
+func (rs *RaceSession) SessionToText() string {
 	text := fmt.Sprintf("%v\nStarted: %v\nEnded: %v\n\nPosition\tCar\t\tBest time\tDif\tTotal time\tLaps\n", rs.Type, rs.Started, rs.Ended)
 	for _, r := range rs.TimeAttackResults {
 		line := fmt.Sprintf("%v\t\t%v\t%v\t%v\t%v\t%v\n", r.Position, r.Driver, r.BestTime, r.Dif, r.TotalTime, r.Laps)
 		text += line
 	}
-	rs.text = text
-	return rs
+	// rs.text = text
+	return text
 }
 
-func (rs *RaceSession) SessionToLines() *RaceSession {
+func (rs *RaceSession) SessionToLines() ([]string, error) {
 	var lines []string
+	if len(rs.Parameters.ColumnsSizes) < 6 {
+		return nil, fmt.Errorf("ColumnsSizes is undefined")
+	}
+	if rs.Parameters.FormatPattern == "" {
+		return nil, fmt.Errorf("FormatPattern is undefined")
+	}
 	columnsSize := rs.Parameters.ColumnsSizes
 	pattern := rs.Parameters.FormatPattern
 	lines = append(lines, fmt.Sprintf("%v", rs.Type))
@@ -176,8 +183,8 @@ func (rs *RaceSession) SessionToLines() *RaceSession {
 			incLen(fmt.Sprint(r.Laps), columnsSize[5]))
 		lines = append(lines, line)
 	}
-	rs.lines = lines
-	return rs
+	// rs.lines = lines
+	return lines, nil
 }
 
 func (rs *RaceSession) GenerateImage() (err error) {
@@ -192,7 +199,10 @@ func (rs *RaceSession) GenerateImage() (err error) {
 	if err != nil {
 		return
 	}
-	text := rs.SessionToLines().lines
+	text, err := rs.SessionToLines()
+	if err != nil {
+		return
+	}
 	pic := text2pic.NewTextPicture(text2pic.Configure{Width: 720, BgColor: text2pic.ColorBlack})
 	var fontsize float64 = 8
 	if rs.Parameters.FontSize != 0 {
